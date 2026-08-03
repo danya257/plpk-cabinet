@@ -1,7 +1,7 @@
 /* Service worker: офлайн-кэш статики (cache-first), API всегда по сети.
    api.json тоже по сети — это указатель на актуальный адрес шлюза. */
-var CACHE = 'plpk-cabinet-v3';
-var ASSETS = ['./', './index.html', './app.js', './manifest.webmanifest',
+var CACHE = 'plpk-cabinet-v4';
+var ASSETS = ['./', './index.html', './app.js', './manifest.webmanifest', './topics.js',
   './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', function (e) {
