@@ -11,7 +11,7 @@
     id: LS.getItem('cid') || '',
     pwd: LS.getItem('cpwd') || '',
     user: LS.getItem('cuser') || '',
-    dash: null, appeals: [], filter: LS.getItem('filter') || '',
+    dash: null, recs: null, appeals: [], filter: LS.getItem('filter') || '',
     current: null
   };
 
@@ -106,6 +106,9 @@
     loadAppeals();
     loadNews();
     loadDocs();
+    loadServicesUsage();
+    loadRecommendations();
+    loadConsult();
     call('ClientDashboard', creds()).then(function (d) {
       if (d['Отказ'] !== true) {
         state.dash = d; cacheSet('dash', d);
@@ -289,6 +292,81 @@
     host.innerHTML = out;
   }
 
+  /* ---------- ПОТРЕБЛЕНИЕ СЕРВИСОВ (п.9c) ---------- */
+  function loadServicesUsage() {
+    var cached = cacheGet('usage');
+    if (cached) { renderUsage(cached); }
+    call('ServicesInfo', creds()).then(function (j) {
+      if (j['Отказ'] === true) { return; }
+      var list = j['Сервисы'] || [];
+      cacheSet('usage', list); renderUsage(list);
+    }).catch(function () { });
+  }
+  function renderUsage(list) {
+    var host = $('svc-list');
+    if (!host) { return; }
+    if (!list.length) { host.innerHTML = '<div class="small">Сведений о подписках нет.</div>'; return; }
+    var out = '';
+    for (var i = 0; i < list.length; i++) {
+      var s2 = list[i];
+      var st = String(s2['Состояние'] || '');
+      var cls = st === 'действует' ? 'ok' : (st === 'истекает' ? 'amber' : 'red');
+      var extra = [];
+      if (Number(s2['КоличествоБаз']) > 0) { extra.push(s2['КоличествоБаз'] + ' баз'); }
+      if (Number(s2['КоличествоСеансов']) > 0) { extra.push(s2['КоличествоСеансов'] + ' сеансов'); }
+      out += '<div class="svc"><div class="ic">▤</div><div style="flex:1;min-width:0;">' +
+        '<div style="font-weight:600;font-size:14px;">' + esc(s2['ВидПодписки'] || s2['ВидСервиса'] || 'Сервис') + '</div>' +
+        '<div class="small">' + esc(s2['ВидСервиса'] || '') +
+        (s2['ДатаОкончания'] ? ' · до ' + fmtDate(s2['ДатаОкончания']) : '') +
+        ((st === 'действует' || st === 'истекает') ? ' · осталось ' + Number(s2['ДнейОсталось'] || 0) + ' дн.' : '') +
+        (extra.length ? ' · ' + esc(extra.join(' · ')) : '') + '</div></div>' +
+        '<span class="badge ' + cls + '">' + esc(st) + '</span></div>';
+    }
+    host.innerHTML = out;
+  }
+
+  /* ---------- ЛИНИЯ КОНСУЛЬТАЦИЙ (п.11f) ---------- */
+  function loadConsult() {
+    var cached = cacheGet('consult');
+    if (cached) { renderConsult(cached); }
+    call('ConsultInfo', creds()).then(function (j) {
+      if (j['Отказ'] === true) { return; }
+      cacheSet('consult', j); renderConsult(j);
+    }).catch(function () { });
+  }
+  function renderConsult(j) {
+    var host = $('svc-consult');
+    if (!host) { return; }
+    var left = Number(j['Остаток'] || 0);
+    var out = '<div class="row" style="justify-content:space-between;margin-bottom:10px;">' +
+      '<span class="badge ' + (left > 0 ? 'brand' : 'amber') + '">Остаток: ' + left + '</span>' +
+      '<span class="small">оплачено ' + Number(j['Оплачено'] || 0) + ' · использовано ' + Number(j['Потрачено'] || 0) + '</span></div>';
+    var packs = j['Пакеты'] || [];
+    if (packs.length) {
+      for (var i = 0; i < Math.min(packs.length, 5); i++) {
+        var p = packs[i];
+        var period = (p['ДатаНачала'] || '') + (p['ДатаОкончания'] ? ' — ' + p['ДатаОкончания'] : '');
+        out += '<div class="feed-item" style="cursor:default;"><div class="feed-title">' + esc(p['Документ'] || 'Пакет') + '</div>' +
+          '<div class="feed-meta">' + esc(period || fmtDate(p['Дата'])) + ' · +' + esc(p['Количество']) + '</div></div>';
+      }
+    } else {
+      out += '<div class="small">Оплаченных пакетов не найдено.</div>';
+    }
+    out += '<div class="row" style="margin-top:12px;">' +
+      '<button class="btn ghost" data-pack="7" style="font-size:13px;padding:11px;">+7 консультаций</button>' +
+      '<button class="btn ghost" data-pack="8" style="font-size:13px;padding:11px;">+8 консультаций</button></div>';
+    host.innerHTML = out;
+    var btns = host.querySelectorAll('[data-pack]');
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].addEventListener('click', function () {
+        var nn = this.getAttribute('data-pack');
+        $('n-topic').value = 'Другое';
+        $('n-text').value = 'Прошу выставить счёт на пакет +' + nn + ' консультаций.';
+        show('new');
+      });
+    }
+  }
+
   /* ---------- РЕКОМЕНДАЦИИ ---------- */
   var CATALOG = [
     { name: '1С-Отчётность', note: 'Сдача отчётности во все контролирующие органы прямо из 1С.' },
@@ -297,6 +375,15 @@
     { name: '1СПАРК Риски', note: 'Оценка надёжности контрагентов и мониторинг изменений.' },
     { name: '1С:Облачный архив', note: 'Автоматическое резервное копирование базы в облако.' }
   ];
+  function loadRecommendations() {
+    var cached = cacheGet('recs');
+    if (cached) { state.recs = cached; renderRecs(); }
+    call('Recommendations', creds()).then(function (j) {
+      if (j['Отказ'] === true) { return; }
+      state.recs = j; cacheSet('recs', j); renderRecs();
+    }).catch(function () { });
+  }
+
   function renderRecs() {
     var d = state.dash || {};
     var host = $('rec-list');
@@ -314,27 +401,42 @@
         '<div style="font-weight:600;font-size:14px;">' + esc(d['Вебинар']) + '</div>' +
         '<div class="small" style="margin-top:3px;">Ближайшее обучающее мероприятие для клиентов сопровождения.</div></div></div></div>';
     }
-    // сервисы, которых нет среди подключённых (по данным веб-сервиса)
-    var have = {};
-    var svcs = d['Сервисы'] || [];
-    for (var i = 0; i < svcs.length; i++) {
-      have[String(svcs[i]['ВидСервиса'] || svcs[i]['ВидПодписки'] || '').toLowerCase()] = 1;
-    }
+    // рекомендации: живые с сервера (профиль клиента), иначе — общий каталог
+    var live = state.recs;
     var rec = '';
-    for (var k = 0; k < CATALOG.length; k++) {
-      var c = CATALOG[k];
-      var hit = false;
-      for (var hk in have) { if (hk.indexOf(c.name.toLowerCase()) >= 0) { hit = true; } }
-      if (!hit) {
+    if (live && live['Рекомендации'] && live['Рекомендации'].length) {
+      var items = live['Рекомендации'];
+      for (var li = 0; li < items.length; li++) {
         rec += '<div class="svc"><div class="ic">★</div><div style="flex:1;min-width:0;">' +
-          '<div style="font-weight:600;font-size:14px;">' + esc(c.name) + '</div>' +
-          '<div class="small">' + esc(c.note) + '</div></div>' +
+          '<div style="font-weight:600;font-size:14px;">' + esc(items[li]['Сервис']) + '</div>' +
+          '<div class="small">' + esc(items[li]['Описание'] || '') + '</div>' +
+          '<div class="tiny">' + esc(items[li]['Причина'] || '') + '</div></div>' +
           '<span class="badge">не подключён</span></div>';
+      }
+    } else {
+      var have = {};
+      var svcs = d['Сервисы'] || [];
+      for (var i = 0; i < svcs.length; i++) {
+        have[String(svcs[i]['ВидСервиса'] || svcs[i]['ВидПодписки'] || '').toLowerCase()] = 1;
+      }
+      for (var k = 0; k < CATALOG.length; k++) {
+        var c = CATALOG[k];
+        var hit = false;
+        for (var hk in have) { if (hk.indexOf(c.name.toLowerCase()) >= 0) { hit = true; } }
+        if (!hit) {
+          rec += '<div class="svc"><div class="ic">★</div><div style="flex:1;min-width:0;">' +
+            '<div style="font-weight:600;font-size:14px;">' + esc(c.name) + '</div>' +
+            '<div class="small">' + esc(c.note) + '</div></div>' +
+            '<span class="badge">не подключён</span></div>';
+        }
       }
     }
     if (rec) {
+      var prof = live ? String(live['Отрасль'] || live['ОКВЭД'] || '') : '';
       out += '<div class="panel"><h2>Сервисы, которые могут пригодиться</h2>' + rec +
-        '<div class="tiny" style="margin-top:10px;">Состав рекомендаций уточняется по профилю компании. Подключение — через вашего менеджера.</div></div>';
+        '<div class="tiny" style="margin-top:10px;">' +
+        (prof ? 'Подобрано по профилю: ' + esc(prof) + '. ' : 'Профиль деятельности не заполнен — показаны сервисы для всех. ') +
+        'Подключение — через вашего менеджера.</div></div>';
     }
     host.innerHTML = out || '<div class="panel"><div class="small">Рекомендаций пока нет.</div></div>';
   }

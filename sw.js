@@ -1,6 +1,6 @@
 /* Service worker: офлайн-кэш статики (cache-first), API всегда по сети.
    api.json тоже по сети — это указатель на актуальный адрес шлюза. */
-var CACHE = 'plpk-cabinet-v4';
+var CACHE = 'plpk-cabinet-v5';
 var ASSETS = ['./', './index.html', './app.js', './manifest.webmanifest', './topics.js',
   './icons/icon-192.png', './icons/icon-512.png'];
 
